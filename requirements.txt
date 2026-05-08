@@ -1,0 +1,7 @@
+python-telegram-bot>=21
+google-adk
+google-genai
+qrcode[pil]
+python-dotenv
+httpx
+solders
