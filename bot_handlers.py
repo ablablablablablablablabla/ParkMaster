@@ -286,20 +286,8 @@ async def _watch_payment(booking_id, user_id, chat_id, context):
                     spot['status'] = 'reserved'
                 add_log("payment_watcher", booking_id, "payment_confirmed", f"sig={sig}")
                 save_state()
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=(
-                        f"✅ <b>Payment received!</b>\n"
-                        f"🔗 <a href='https://explorer.solana.com/tx/{sig}?cluster=devnet'>View tx in Solana Explorer</a>\n"
-                        f"<code>{sig}</code>"
-                    ),
-                    parse_mode='HTML',
-                )
-                response = await handle_agent_call(
-                    user_id,
-                    f"[ROLE=driver] [DRIVER_ID={user_id}] Payment for {booking_id} is confirmed. Give me the access instructions."
-                )
-                await context.bot.send_message(chat_id=chat_id, text=response)
+                text = _build_access_text(booking_id)
+                await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
                 return
         booking = BOOKINGS.get(booking_id)
         if booking and booking['status'] == 'pending_payment':
@@ -314,29 +302,65 @@ async def _watch_payment(booking_id, user_id, chat_id, context):
         WATCH_TASKS.pop(booking_id, None)
 
 
+def _build_access_text(booking_id: str) -> str:
+    booking = BOOKINGS.get(booking_id)
+    if not booking:
+        return "Booking not found."
+    spot = PARKING_SPOTS.get(booking['spot_id'])
+    if not spot:
+        return "Parking spot data missing."
+    booking['status'] = 'access_released'
+    spot = PARKING_SPOTS.get(booking['spot_id'])
+    if spot and spot.get('status') == 'reserved':
+        spot['status'] = 'active'
+    add_log("payment_watcher", booking_id, "access_released", "Access instructions delivered to driver.")
+    save_state()
+    sig = booking.get('payment_signature', '')
+    explorer = f"\n\n🔗 <a href='https://explorer.solana.com/tx/{sig}?cluster=devnet'>View on Solana Explorer</a>" if sig else ""
+    return (
+        f"✅ <b>Parking access granted!</b>{explorer}\n\n"
+        f"📍 <b>{spot['title']}</b>\n"
+        f"🗺 <a href='{spot.get('google_maps_link', '')}'>Google Maps</a>\n\n"
+        f"<b>Access instructions:</b>\n{spot['access_instructions']}\n\n"
+        f"<b>Rules:</b> {spot['rules']}"
+    )
+
+
 async def _check_and_release(booking_id, user_id, chat_id, context):
     booking = BOOKINGS.get(booking_id)
     if not booking:
         await context.bot.send_message(chat_id=chat_id, text="Booking not found.")
         return
+
     if booking['status'] in ('paid', 'access_released'):
-        sig = booking.get('payment_signature')
-        link = (
-            f"\n🔗 https://explorer.solana.com/tx/{sig}?cluster=devnet\nTx: {sig}"
-            if sig else ""
-        )
-        await context.bot.send_message(chat_id=chat_id, text=f"✅ Payment already confirmed.{link}")
-        response = await handle_agent_call(
-            user_id,
-            f"[ROLE=driver] [DRIVER_ID={user_id}] Give me the access instructions for {booking_id}."
-        )
-        await context.bot.send_message(chat_id=chat_id, text=response)
+        text = _build_access_text(booking_id)
+        await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
         return
-    response = await handle_agent_call(
-        user_id,
-        f"[ROLE=driver] [DRIVER_ID={user_id}] Check payment for {booking_id} via verify_payment_onchain. If status=success, give me the instructions."
+
+    sig = await verify_payment(
+        reference=booking['payment_reference'],
+        expected_recipient=booking['recipient_wallet'],
+        expected_amount=booking['price_usdc'],
+        mint=booking['mint'],
+        created_after=booking.get('created_at', 0.0),
     )
-    await context.bot.send_message(chat_id=chat_id, text=response)
+    if not sig:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⏳ Payment not found on-chain yet. Wait 10–30 seconds after sending, then try again."
+        )
+        return
+
+    booking['status'] = 'paid'
+    booking['payment_signature'] = sig
+    spot = PARKING_SPOTS.get(booking['spot_id'])
+    if spot:
+        spot['status'] = 'reserved'
+    add_log("payment_watcher", booking_id, "payment_confirmed", f"sig={sig}")
+    save_state()
+
+    text = _build_access_text(booking_id)
+    await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
 
 
 async def demo_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -25,7 +25,7 @@ async def geocode_address(address: str) -> dict:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(
                 "https://nominatim.openstreetmap.org/search",
-                params={"q": address, "format": "json", "limit": 1},
+                params={"q": address, "format": "json", "limit": 1, "countrycodes": "rs"},
                 headers={"User-Agent": "ParkMasterBot/1.0 (hackathon)"},
             )
             r.raise_for_status()
@@ -255,10 +255,11 @@ def get_park_master_agent():
     For drivers:
     1. If they send GPS coordinates, call find_nearby_parking directly.
        If they describe their location in words (address, neighborhood,
-       landmark), FIRST call geocode_address to get lat/lng, THEN call
-       find_nearby_parking with those coords. Default duration: 120 min
-       unless the driver specifies otherwise. Do NOT ask for coordinates
-       if they gave a textual location — geocode it.
+       landmark, or any place name), IMMEDIATELY call geocode_address with
+       exactly what they said — do NOT ask for the city, do NOT ask for
+       clarification, do NOT ask for more details. Just geocode it now.
+       Then call find_nearby_parking with those coords.
+       Default duration: 120 min unless the driver specifies otherwise.
     2. Help them pick a spot, then call request_price_offer.
     3. If the driver agrees, create the booking via create_booking.
     4. When the driver says they paid, call verify_payment_onchain.
