@@ -10,6 +10,8 @@ from qr import generate_qr_code
 from google.adk.runners import InMemoryRunner
 import time
 from google.genai import types
+import html
+from telegram.constants import ParseMode
 
 # States
 MAIN_MENU, DRIVER_ACTION, OWNER_ACTION = range(3)
@@ -147,24 +149,29 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ПЕРВАЯ ПРОВЕРКА — используем if
     if data.startswith("book_"):
         spot_id = data.split("_", 1)[1]
-        prompt = f"Я хочу забронировать парковку {spot_id} на 2 часа. Создай бронирование и пришли подтверждение."
+
+        # 1. ПЕРЕДАЕМ РЕАЛЬНЫЙ ID ЮЗЕРА АГЕНТУ
+        prompt = (
+            f"Я хочу забронировать парковку {spot_id} на 2 часа. "
+            f"Мой driver_id: {user_id}. "  # <--- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
+            f"Вызови инструмент create_booking, обязательно передав мой driver_id. "
+            f"ВНИМАНИЕ: СТРОГО ЗАПРЕЩЕНО использовать confirm_mock_payment. ОСТАНОВИСЬ ПОСЛЕ БРОНИРОВАНИЯ."
+        )
+
         await query.message.reply_text("⏳ Формирую бронирование...")
         response = await handle_agent_call(user_id, prompt)
 
-        # Поиск созданного бронирования
+        # 2. ТЕПЕРЬ БОТ НАЙДЕТ БРОНЬ, ПОТОМУ ЧТО ID СОВПАДАЮТ
         booking = None
         for b in sorted(BOOKINGS.values(), key=lambda x: x['created_at'], reverse=True):
             if b['driver_id'] == user_id and b['status'] == 'pending_payment':
                 booking = b
                 break
 
+        # 3. ВЫВОДИМ ФОТО И ССЫЛКИ
         if booking:
-            # Экранируем ответ агента, чтобы символы < > не ломали HTML Telegram
-            import html
             safe_response = html.escape(response)
-
             try:
-                # Используем твой статический файл QR.jpg
                 with open('QR.jpg', 'rb') as photo:
                     await query.message.reply_photo(
                         photo=photo,
@@ -172,28 +179,26 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             f"✅ <b>Бронирование создано!</b>\n\n"
                             f"{safe_response}\n\n"
                             f"💰 Сумма: <code>{booking['price_usdc']}</code> USDC\n\n"
-                            f"🔗 <b><a href='{booking['solana_pay_url']}'>Оплатить через Solana Pay</a></b>\n\n"
-                            f"<i>(Нажмите на ссылку для перехода в кошелек или сканируйте QR)</i>"
+                            f"🔗 <b><a href='{booking['solana_pay_url']}'>Оплатить через Solana Pay</a></b>"
                         ),
-                        parse_mode='HTML',
+                        parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup([[
                             InlineKeyboardButton("✅ Оплата подтверждена (Mock)",
                                                  callback_data=f"confirm_{booking['id']}")
                         ]])
                     )
             except FileNotFoundError:
-                # Фолбэк, если картинка пропала
                 await query.message.reply_text(
                     f"✅ <b>Бронирование создано!</b>\n\n{safe_response}\n\n"
-                    f"🔗 <b><a href='{booking['solana_pay_url']}'>Оплатить через Solana Pay</a></b>",
-                    parse_mode='HTML',
+                    f"🔗 <b><a href='{booking['solana_pay_url']}'>Оплатить через Solana Pay</a></b>\n\n"
+                    f"⚠️ Файл QR.jpg не найден.",
+                    parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
                         InlineKeyboardButton("✅ Оплата подтверждена (Mock)", callback_data=f"confirm_{booking['id']}")
                     ]])
                 )
         else:
             await query.message.reply_text(response)
-
     # ВТОРАЯ ПРОВЕРКА — здесь уже elif
     elif data.startswith("confirm_"):
         booking_id = data.split("_", 1)[1]
