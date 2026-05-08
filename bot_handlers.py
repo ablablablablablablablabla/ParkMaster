@@ -10,6 +10,7 @@ log = logging.getLogger(__name__)
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+from telegram.constants import ParseMode
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
@@ -232,7 +233,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("book_"):
         spot_id = data.split("_", 1)[1]
-        prompt = f"[ROLE=driver] [DRIVER_ID={user_id}] I want to book parking spot {spot_id} for 2 hours. Create the booking and send a confirmation."
+        prompt = (
+            f"[ROLE=driver] [DRIVER_ID={user_id}] I want to book parking spot {spot_id} for 2 hours. "
+            f"Call create_booking, passing my driver_id={user_id}. "
+            f"DO NOT call confirm_mock_payment. Stop after booking is created."
+        )
         await query.message.reply_text("⏳ Creating booking...")
         response = await handle_agent_call(user_id, prompt)
 
