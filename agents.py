@@ -11,6 +11,9 @@ from payments import create_solana_pay_url, new_reference_pubkey, verify_payment
 
 load_dotenv()
 
+CAMERA_SERVER_URL = os.getenv("CAMERA_SERVER_URL", "http://localhost:5000")
+CAMERA_SPOT_ID = "spot_sajam_1"
+
 FLAT_PRICE_USDC = 1.0  # demo: flat 1 USDC per booking regardless of duration
 
 
@@ -57,6 +60,14 @@ def find_nearby_parking(lat: float, lng: float, duration_minutes: int) -> list:
                 "distance": distance_text,
                 "rules": spot['rules']
             })
+
+    try:
+        with httpx.Client(timeout=2.0) as client:
+            r = client.get(f"{CAMERA_SERVER_URL}/status")
+            if r.status_code == 200 and r.json().get("is_occupied"):
+                available = [s for s in available if s["id"] != CAMERA_SPOT_ID]
+    except Exception:
+        pass  # CV server unreachable → include spot normally
     return available
 
 

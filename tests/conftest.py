@@ -36,5 +36,10 @@ def pytest_configure(config):
         'telegram.constants': MagicMock(),
         # Solana / payments
         'solders': MagicMock(),
+        'solders.keypair': MagicMock(),
+        'solders.pubkey': MagicMock(),
+        'solders.transaction': MagicMock(),
+        'solders.signature': MagicMock(),
+        'base58': MagicMock(),
         'dotenv': MagicMock(),
     })
