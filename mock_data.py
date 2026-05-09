@@ -24,6 +24,22 @@ INITIAL_PARKING_SPOTS = [
         "verification_status": "verified"
     },
     {
+        "id": "spot_sajam_1",
+        "title": "Lot Sajam",
+        "city": "Belgrade",
+        "lat": 44.7940,
+        "lng": 20.4302,
+        "google_maps_link": "https://maps.google.com/?q=Sajam+Belgrade",
+        "base_price_per_hour": 2.0,
+        "minimum_duration_minutes": 60,
+        "availability": "00:00-23:59",
+        "status": "active",
+        "wallet_address": DEMO_RECIPIENT,
+        "access_instructions": "Enter from Bulevar vojvode Mišića. Spot is marked P3, ground level.",
+        "rules": "No overnight parking. Stay within marked lines.",
+        "verification_status": "verified"
+    },
+    {
         "id": "spot_promenada_1",
         "title": "Promenada Private Spot",
         "city": "Novi Sad",

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parking Detector</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 500px;
+        }
+
+        h1 {
+            margin-bottom: 1.5rem;
+            color: #1a73e8;
+        }
+
+        #video-container {
+            position: relative;
+            width: 100%;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+            aspect-ratio: 4/3;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #result-overlay {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .status-empty {
+            background-color: #e6f4ea;
+            color: #1e8e3e;
+            border: 2px solid #1e8e3e;
+        }
+
+        .status-occupied {
+            background-color: #fce8e6;
+            color: #d93025;
+            border: 2px solid #d93025;
+        }
+
+        .status-no-parking {
+            background-color: #fff4e5;
+            color: #ff9800;
+            border: 2px solid #ff9800;
+        }
+
+        .status-loading {
+            background-color: #f1f3f4;
+            color: #5f6368;
+            border: 2px solid #dadce0;
+        }
+
+        .confidence {
+            font-size: 0.9rem;
+            font-weight: normal;
+            margin-top: 0.5rem;
+            display: block;
+        }
+
+        #canvas {
+            display: none;
+        }
+
+        .btn {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-top: 1rem;
+        }
+
+        .btn:hover {
+            background-color: #1557b0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Parking Detector</h1>
+        
+        <div id="video-container">
+            <video id="video" autoplay playsinline muted></video>
+        </div>
+
+        <div id="result-overlay" class="status-loading">
+            Waiting for camera...
+            <span class="confidence" id="confidence-val"></span>
+        </div>
+
+        <canvas id="canvas"></canvas>
+        <button id="start-btn" class="btn">Start Monitoring</button>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const resultOverlay = document.getElementById('result-overlay');
+        const confidenceVal = document.getElementById('confidence-val');
+        const startBtn = document.getElementById('start-btn');
+        let isMonitoring = false;
+        let timer = null;
+
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' }, 
+                    audio: false 
+                });
+                video.srcObject = stream;
+                return true;
+            } catch (err) {
+                console.error("Camera error: ", err);
+                resultOverlay.innerText = "Error accessing camera";
+                return false;
+            }
+        }
+
+        function captureFrame() {
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.8);
+        }
+
+        async function analyzeFrame() {
+            if (!isMonitoring) return;
+
+            const imageData = captureFrame();
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: imageData })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    console.error(data.error);
+                } else {
+                    updateUI(data);
+                }
+            } catch (err) {
+                console.error("Request error: ", err);
+            }
+
+            // Next cycle after 1 second
+            if (isMonitoring) {
+                timer = setTimeout(analyzeFrame, 1000);
+            }
+        }
+
+        function updateUI(data) {
+            if (data.is_no_parking) {
+                resultOverlay.innerText = "NOT A PARKING SPOT ⚠️";
+                resultOverlay.className = "status-no-parking";
+            } else if (data.is_occupied) {
+                resultOverlay.innerText = "Spot OCCUPIED 🚗";
+                resultOverlay.className = "status-occupied";
+            } else {
+                resultOverlay.innerText = "Spot EMPTY ✅";
+                resultOverlay.className = "status-empty";
+            }
+            confidenceVal.innerText = `Confidence: ${(data.confidence * 100).toFixed(1)}%`;
+            resultOverlay.appendChild(confidenceVal);
+        }
+
+        startBtn.addEventListener('click', async () => {
+            if (!isMonitoring) {
+                const ok = await setupCamera();
+                if (ok) {
+                    isMonitoring = true;
+                    startBtn.innerText = "Stop Monitoring";
+                    analyzeFrame();
+                }
+            } else {
+                isMonitoring = false;
+                clearTimeout(timer);
+                startBtn.innerText = "Start Monitoring";
+                resultOverlay.innerText = "Monitoring stopped";
+                resultOverlay.className = "status-loading";
+                confidenceVal.innerText = "";
+            }
+        });
+    </script>
+</body>
+</html>
