@@ -5,3 +5,5 @@ qrcode[pil]
 python-dotenv
 httpx
 solders
+pytest
+pytest-mock
